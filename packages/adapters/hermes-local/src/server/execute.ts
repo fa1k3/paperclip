@@ -501,9 +501,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (cfgBoolean(config.verbose) === true) args.push("-v");
 
   // Session resume
+  // Validate session ID format to prevent storing invalid values (e.g. "from")
+  // that cause an infinite "Session not found" loop on every subsequent run.
+  const SESSION_ID_FORMAT = /^\d{8}_\d{6}_[a-zA-Z0-9]+$/;
   const prevSessionId = cfgString(ctx.runtime.sessionParams?.sessionId);
-  if (persistSession && prevSessionId) {
-    args.push("--resume", prevSessionId);
+  const validPrevSessionId = prevSessionId && SESSION_ID_FORMAT.test(prevSessionId) ? prevSessionId : undefined;
+  if (persistSession && validPrevSessionId) {
+    args.push("--resume", validPrevSessionId);
   }
 
   if (extraArgs?.length) {
@@ -543,10 +547,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     "stdout",
     `[hermes] Starting Hermes Agent (model=${model}, timeout=${timeoutSec}s)\n`
   );
-  if (prevSessionId) {
+  if (validPrevSessionId) {
     await ctx.onLog(
       "stdout",
-      `[hermes] Resuming session: ${prevSessionId}\n`
+      `[hermes] Resuming session: ${validPrevSessionId}\n`
     );
   }
 
@@ -597,8 +601,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     executionResult.summary = parsed.response.slice(0, 2000);
   }
 
-  // Store session ID for next run
-  if (persistSession && parsed.sessionId) {
+  // Store session ID for next run (validate format to prevent infinite loops)
+  if (persistSession && parsed.sessionId && SESSION_ID_FORMAT.test(parsed.sessionId)) {
     executionResult.sessionParams = { sessionId: parsed.sessionId };
     executionResult.sessionDisplayId = parsed.sessionId.slice(0, 16);
   }
